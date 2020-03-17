@@ -5,6 +5,7 @@ import dash_html_components as html
 import pandas as pd
 import dash_table
 import plotly.graph_objs as go
+import numpy as np
 from dash.dependencies import Input, Output
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
@@ -16,7 +17,7 @@ methods = ['zb1', 'mr1',
            'refs', 'titls', 'texts',
            'ref1',
            'uT1', 'uM1',
-           'titer', 'tiref', 'teref', 'tite']
+           'tiref', 'teref', 'tite']
 sources = {
     'zb1': pd.read_pickle('data/zbByMsc.pkl'),
     'mr1': pd.read_pickle('data/mrByMsc.pkl')
@@ -43,6 +44,56 @@ def get_data_frame(source, minimum, sort):
     z = pd.DataFrame(z[z['p'] >= minimum])
     z = z.sort_values(by=[f'f{sort}'], ascending=False)
     return z
+
+
+tc: pd.DataFrame = pd.read_pickle('data/titerConfZb.pkl')
+
+
+def get_count(i: int, j: int) -> int:
+    c = tc[(tc['t'] == i) & (tc['p'] == j)]['count']
+    if c.size == 1:
+        return c.values[0]
+    else:
+        return 0
+
+
+def get_conf_matrix(minimum):
+    label = get_conf_label(minimum)
+    z = np.ndarray(shape=(label.size, label.size), dtype=int)
+    i = 0
+    for x in label:
+        j = 0
+        for y in label:
+            z[i, j] = get_count(x, y)
+            j += 1
+        i += 1
+    return z
+
+
+def get_conf_label(minimum):
+    titer_conf_label = get_data_frame('zb1', minimum, 'mr1')['msc'].values
+    return titer_conf_label
+
+
+def get_conf_label_as_string(minimum):
+    label = get_data_frame('zb1', minimum, 'mr1')['msc'].values.astype(str)
+    label2 = []
+    for label in label:
+        label2.append(label + "*")
+    return label2
+
+
+def get_heatmap(minimum):
+    return {
+        'data': [go.Heatmap(
+            z=get_conf_matrix(minimum),
+            x=get_conf_label_as_string(minimum), y=get_conf_label_as_string(minimum),
+            colorscale='Blues')],
+        'layout': {
+            'yaxis': {
+                'scaleanchor': 'x'
+            },
+        }}
 
 
 app.layout = html.Div(children=[
@@ -75,6 +126,9 @@ app.layout = html.Div(children=[
     dcc.Graph(
         id='example-graph'
     ),
+    dcc.Graph(
+        id='heatmap'
+    ),
     dash_table.DataTable(
         id='table',
         columns=[{"name": i, "id": i} for i in sources['zb1'].columns],
@@ -89,13 +143,13 @@ app.layout = html.Div(children=[
 
 
 @app.callback(
-    [Output('example-graph', 'figure'), Output('table', 'data')],
+    [Output('example-graph', 'figure'), Output('table', 'data'), Output('heatmap', 'figure')],
     [Input('ref', 'value'), Input('minimum', 'value'), Input('sort', 'value')])
 def update_output_div(ref, minimum, sort):
     return {
                'data': get_data(ref, minimum, sort),
                'layout': layout
-           }, get_data_frame(ref, minimum, sort).to_dict('records')
+           }, get_data_frame(ref, minimum, sort).to_dict('records'), get_heatmap(minimum)
 
 
 server = app.server
